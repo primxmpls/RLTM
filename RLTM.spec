@@ -13,6 +13,7 @@ a = Analysis(
         ('rl_asset_swapper.py', '.'),
         ('items.json', '.'),
         ('keys.txt', '.'),
+        ('default.ico', '.'),
     ],
     hiddenimports=['cryptography', 'cryptography.hazmat.primitives.ciphers', 'concurrent', 'concurrent.futures'],
     hookspath=[],

@@ -312,6 +312,12 @@ def apply_name_pairs(upk, package, pairs: Sequence[Tuple[str, str]], preserve_he
         colliding_indices, _ = find_name_indices(current, new)
         for c_idx in colliding_indices:
             dummy_name = f"FREEDNAME{c_idx}" # No underscores, engine treats as pure base name
+            if preserve_header_offsets:
+                fixed, pad = fixed_rename_name_entry(upk, current, c_idx, dummy_name)
+                if fixed is not None:
+                    current = fixed
+                    log.append(f"FREED(FIXED): name[{c_idx}] freed to {dummy_name} in-place; pad={pad}.")
+                    continue
             try:
                 current = upk.rename_name_entry(current, c_idx, dummy_name)
                 log.append(f"FREED: Renamed colliding name at index {c_idx} to {dummy_name}")
