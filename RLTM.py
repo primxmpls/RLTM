@@ -33,7 +33,7 @@ from tkinter import filedialog, messagebox, ttk
 # ─── App constants ──────────────────────────────────────────────────────────
 
 APP_NAME = "Rocket League Transmogrifier"
-APP_VERSION = "1.3.0.0"
+APP_VERSION = "1.2.70"
 
 # Slots we expose in the main dropdown.
 SUPPORTED_SLOTS = [
