@@ -33,7 +33,7 @@ from tkinter import filedialog, messagebox, ttk
 # ─── App constants ──────────────────────────────────────────────────────────
 
 APP_NAME = "Rocket League Transmogrifier"
-APP_VERSION = "1.2.67.0"
+APP_VERSION = "1.2.70"
 
 # Slots we expose in the main dropdown.
 SUPPORTED_SLOTS = [
@@ -43,7 +43,6 @@ SUPPORTED_SLOTS = [
     "Trail",
 ]
 
-# Slots shown only when the user enables "Other swaps".
 EXPERIMENTAL_SLOTS = [
     "Antenna",
     "Avatar Border",
@@ -59,12 +58,7 @@ SLOT_ALIASES: Dict[str, str] = {
     "Boost": "Rocket Boost",
 }
 
-# Visual separator inserted between standard and other slots in the dropdown.
-_SLOT_SEPARATOR = "── Other swaps ──"
-
 # Slots that show a crash-risk warning.
-RISKY_SLOTS = {"Goal Explosion"}
-
 # Swaps known to crash the game regardless of other settings.
 # Each entry: (target_product | None, donor_product | None, message).
 # None means "any" — so (None, "sparkles", ...) blocks Sparkles as donor against any target.
@@ -508,8 +502,6 @@ class ModderApp:
         style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground=text_primary, background=bg_color)
         style.configure("Sub.TLabel", font=("Segoe UI", 10), foreground=text_secondary, background=bg_color)
         style.configure("Status.TLabel", font=("Segoe UI", 9), foreground=text_primary, background=bg_color)
-        style.configure("Warn.TLabel", font=("Segoe UI", 9, "bold"), foreground="#d97706", background=bg_color)
-
         # Buttons: Increased padding for a "chunkier", more clickable modern feel
         style.configure("Apply.TButton", font=("Segoe UI", 10, "bold"), padding=(24, 12))
 
@@ -550,33 +542,13 @@ class ModderApp:
         self.slot_var = tk.StringVar(value=SUPPORTED_SLOTS[0])
         self.slot_combo = ttk.Combobox(
             slot_row,
-            values=SUPPORTED_SLOTS,
+            values=SUPPORTED_SLOTS + EXPERIMENTAL_SLOTS,
             textvariable=self.slot_var,
             state="readonly",
             width=24,
         )
         self.slot_combo.pack(side="left")
         self.slot_combo.bind("<<ComboboxSelected>>", self._on_slot_change)
-
-        # Experimental slots toggle
-        self.experimental_var = tk.BooleanVar(value=False)
-        exp_row = ttk.Frame(outer)
-        exp_row.pack(fill="x", pady=(2, 6))
-        ttk.Checkbutton(
-            exp_row,
-            text="Enable other swaps",
-            variable=self.experimental_var,
-            command=self._on_experimental_toggle,
-        ).pack(side="left")
-        ttk.Label(
-            exp_row,
-            text="Largely untested — higher chance of crashes.",
-            style="Warn.TLabel",
-        ).pack(side="left", padx=(8, 0))
-
-        # Risk warning (shown for risky slots)
-        self.risk_label = ttk.Label(outer, text="", style="Warn.TLabel")
-        # Packed/unpacked dynamically — only takes space when visible
 
         # Target & donor dropdowns
         picker = ttk.Frame(outer)
@@ -707,17 +679,6 @@ class ModderApp:
 
         self._on_slot_change()
 
-    def _on_experimental_toggle(self) -> None:
-        if self.experimental_var.get():
-            values = SUPPORTED_SLOTS + [_SLOT_SEPARATOR] + EXPERIMENTAL_SLOTS
-        else:
-            # If an experimental slot is currently selected, reset to first standard slot
-            if self.slot_var.get() in EXPERIMENTAL_SLOTS:
-                self.slot_var.set(SUPPORTED_SLOTS[0])
-            values = SUPPORTED_SLOTS
-        self.slot_combo["values"] = values
-        self._on_slot_change()
-
     def _advance_to_donor(self) -> None:
         """Called when Enter is pressed in the Replace box — move focus to With."""
         self.donor_combo.focus_set()
@@ -725,25 +686,12 @@ class ModderApp:
 
     def _on_slot_change(self, *_) -> None:
         slot = self.slot_var.get()
-
-        # Separator line — not a real slot; snap back to previous valid selection
-        if slot == _SLOT_SEPARATOR:
-            self.slot_var.set(SUPPORTED_SLOTS[0])
-            slot = SUPPORTED_SLOTS[0]
-
         items = self.slot_items.get(slot, [])
         labels = [self._item_label(it) for it in items]
         self.target_combo.set_completion_list(labels)
         self.donor_combo.set_completion_list(labels)
         self.target_var.set("")
         self.donor_var.set("")
-
-        # Risk warning — only takes up space when there's actually something to show
-        if slot in RISKY_SLOTS:
-            self.risk_label.config(text=f"⚠ {slot} swaps are unstable and likely to crash the game. Use Revert to recover.")
-            self.risk_label.pack(anchor="w", pady=(0, 4))
-        else:
-            self.risk_label.pack_forget()
 
     @staticmethod
     def _item_label(item) -> str:
@@ -776,16 +724,60 @@ class ModderApp:
             return
 
         self.game_paths = detect_all_installs()
-        if self.game_paths:
+        if not self.game_paths:
+            self.path_status.config(
+                text="✗ Rocket League not found automatically — click Change to pick the folder.",
+                foreground="#b00020",
+            )
+        elif len(self.game_paths) == 1:
             self.selected_game_path = self.game_paths[0]
             self.config["game_path"] = str(self.selected_game_path)
             save_config(self.config)
             self._update_path_status()
         else:
-            self.path_status.config(
-                text="✗ Rocket League not found automatically — click Change to pick the folder.",
-                foreground="#b00020",
-            )
+            self._prompt_pick_game_path()
+
+    def _prompt_pick_game_path(self) -> None:
+        win = tk.Toplevel(self.root)
+        win.title(f"{APP_NAME} — Multiple installations detected")
+        win.geometry("640x300")
+        win.transient(self.root)
+        win.grab_set()
+
+        ttk.Label(
+            win,
+            text="Multiple Rocket League installations found.\nSelect which one to use:",
+        ).pack(pady=(14, 8))
+
+        frame = ttk.Frame(win)
+        frame.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        lb = tk.Listbox(frame, activestyle="dotbox", exportselection=False)
+        lb.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=lb.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        lb.configure(yscrollcommand=scroll.set)
+
+        for gp in self.game_paths:
+            root_str = str(gp.parents[1]) if len(gp.parents) >= 2 else str(gp)
+            lb.insert(tk.END, root_str)
+
+        def on_select() -> None:
+            sel = lb.curselection()
+            if not sel:
+                return
+            self.selected_game_path = self.game_paths[sel[0]]
+            self.config["game_path"] = str(self.selected_game_path)
+            save_config(self.config)
+            self._update_path_status()
+            win.destroy()
+
+        ttk.Button(win, text="Select", command=on_select).pack(pady=(0, 12))
+        lb.bind("<Double-Button-1>", lambda _: on_select())
+
+        self.root.wait_window(win)
 
     def _update_path_status(self) -> None:
         if not self.selected_game_path:
